@@ -1,0 +1,195 @@
+---
+title: "PLS Maiz 5nm"
+author: "Dana Guerrero"
+date: "2026-10-13"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+
+```
+
+
+## Revisar y limpiar la base de datos
+```{r}
+# Importar base de datos
+library(readxl)
+datos <- read_excel("dataset_master_5nm.csv_4975.xlsx")
+
+# Revisar base de datos
+head(datos)
+dim(datos)
+names(datos)
+str(datos)
+
+# Revisar si faltan valores
+sum(is.na(datos))
+colSums(is.na(datos))
+
+# Revisar las mediciones por muestra
+table(datos$sample_id)        #mediciones
+table(datos$sample_id, datos$temperature_C)   #temperaturas
+
+#Revisar si hay filas duplicadas
+sum(duplicated(datos))
+
+# Revisar los rangos de valores de variables principales
+unique(datos$p_percent)
+unique(datos$temperature_C)
+
+summary(datos$p_percent)
+summary(datos$temperature_C)
+
+
+
+# Crear nueva base con los datos necesarios para pls
+dataset_PLS <- datos[, c(1, 2, 4, 35:175)]
+#Revisarla
+dim(dataset_PLS)
+head(dataset_PLS)
+names(dataset_PLS)
+
+# Revisar datos de los espectros
+espectros <- dataset_PLS[, 4:144]
+all(sapply(espectros, is.numeric))       #Revisar que todos los datos sean numericos
+sum(is.na(espectros))                    #Revisar si hay valores faltantes
+sum(is.infinite(as.matrix(espectros)))   #Revisar si hay valores infinitos
+#Identifica que columnas no son numericas(porque salio FALSE)
+errores <- names(espectros)[!sapply(espectros, is.numeric)]
+sapply(espectros[errores], class)  #Identificar que tipo de dato son
+head(espectros[errores])  
+
+# Corregir errores (cambiar los datos de chr a num)
+espectros[errores] <- lapply(espectros[errores], as.numeric)
+#Revisar cambio
+all(sapply(espectros, is.numeric))
+sum(is.na(espectros))                    #Revisar si hay valores faltantes
+sum(is.infinite(as.matrix(espectros)))   #Revisar si hay valores infinitos
+#Cambiar errores en el dataset creado para PLS
+dataset_PLS[, 4:144] <- espectros     #Remplazar datos de espectros por los corregidos
+#Revisar cambios
+all(sapply(dataset_PLS[, 144], is.numeric))
+sum(is.na(dataset_PLS))
+```
+
+## Gráficas
+```{r}
+# Espectros originales - Grafica 1
+longitudes <- as.numeric(names(espectros)) #Longitudes de onda
+matplot(longitudes, t(as.matrix(espectros)), type = "l", lty = 1, col = rgb(0, 0, 1, 0.25), xlab = "Longitud de onda (nm)", ylab = "Señal espectral", main = "Espectros originales - Grafica 1")
+
+# Espectros separados por temperatura - Grafica 2
+colores <-c("20"="blue", "30"="orange", "40"="red")
+asignar_color <- colores[as.character(dataset_PLS$temperature_C)]
+matplot(longitudes, t(as.matrix(espectros)), type = "l", lty = 1, col = asignar_color, xlab = "Longitud de onda (nm)", ylab = "Señal espectral", main = "Espectros por temperatura - Grafica 2")
+legend("topleft", legend = c("20 °C", "30 °C", "40 °C"), col = c("blue", "orange", "red"), lty = 1)
+
+# Promedio de espectros por temperatura - Grafica 3
+prom_20 <- colMeans(espectros[dataset_PLS$temperature_C == 20, ])
+prom_30 <- colMeans(espectros[dataset_PLS$temperature_C == 30, ])
+prom_40 <- colMeans(espectros[dataset_PLS$temperature_C == 40, ])
+promedios <- cbind(prom_20, prom_30, prom_40)
+matplot(longitudes, promedios, type = "l", lty = 1, lwd = 2, col = c("blue", "orange", "red"), xlab = "Longitud de onda (nm)", ylab = "Señal espectral promedio", main = "Espectros promedio por temperatura - Grafica 3")
+legend("topleft", legend = c("20 °C", "30 °C", "40 °C"), col = c("blue", "orange", "red"), lty = 1)
+
+# Una muestra en sus diferentes temperaturas - Grafica 4
+muestra <- unique(dataset_PLS$sample_id)[1]
+filas_muestra <- dataset_PLS$sample_id == muestra
+espectros_muestra <- espectros[filas_muestra, ]
+temperaturas_muestra <- dataset_PLS$temperature_C[filas_muestra]
+matplot(longitudes, t(as.matrix(espectros_muestra)), type = "l", lty = 1, lwd = 2, col = colores[as.character(temperaturas_muestra)], xlab = "Longitud de onda (nm)", ylab = "Señal espectral", main = paste("Espectros de una muestra - Grafica 4"))
+legend("topleft", legend = c("20 °C", "30 °C", "40 °C"), col = c("blue", "orange", "red"), lty = 1, lwd = 2)
+```
+Grafica 1
+Las curvas tienen formas muy parecidas, pero aprox entre el 1430 y 1650 hay más diferencia entre los espectros. Y en general no hay espectros significativamente alejados del resto.
+
+Grafica 2
+Se observa que los tres colores estan mezclados, no se agrupan.
+
+Grafica 3
+Las 3 curvas tienen casi la misma forma. Viendola a detalle podemos ver pequeñas diferencias, como entre el 1400 y 1500, la cruva roja es la más alta, seguida por la azul y la más baja la naranja. A diferencia de las longitudes de onda entre el el 950 y 1300 que tienen casi se superponen.
+
+Grafica 4
+Se obresva que sigue manteniendo la misma forma con las tres temperaturas. Entre 1400 y 1650 la señal espectral cambia con cada temperatura, entre más alta la temperatura más baja la señal. 
+
+Al comparar la grafica 3 y 4 podemos asumir que no todas las muestras responden igual a los cambios de temperatura. Porque en la grafica de los promedios(3) la curva más alta es la de 40 °C y la más baja la de 30 °C. En cambio, en la grafica de la muestra(4) sucedede diferente,la curva de 20°C es la que esta arriba de la de 30 °C y 40 °C.
+
+
+#PLS
+```{r}
+library(pls)
+
+# Base de datos con solo X y Y
+dataset_modelo <- data.frame(p_percent = dataset_PLS$p_percent, espectros)
+dim(dataset_modelo)
+names(dataset_modelo)[1:6]
+#Revisarla
+is.numeric(dataset_modelo$p_percent)
+all(sapply(dataset_modelo[, -1], is.numeric))
+sum(is.na(dataset_modelo))
+length(unique(dataset_PLS$sample_id))
+
+# Validación cruzada
+muestras <- unique(dataset_PLS$sample_id)
+segmentos <- lapply(muestras, function(id){which(dataset_PLS$sample_id == id)})
+length(segmentos)
+segmentos[[1]]
+table(lengths(segmentos))
+
+# Primer modelo PLS
+#modelo_PLS <- plsr(p_percent ~ ., data = dataset_modelo, ncomp = 10, validation = "CV", segmentos = segmentos, scale = FALSE)
+modelo_PLS <- plsr(p_percent ~ ., data = dataset_modelo, ncomp = 10, validation = "none", scale = FALSE)
+modelo_PLS <- crossval(modelo_PLS, segments = segmentos)
+summary(modelo_PLS)
+
+#Revisar segmentos utilizados
+length(modelo_PLS$validation$segments)
+modelo_PLS$validation$segments[[1]]
+segmentos[[1]]
+
+#Calcular r^2 de validacion
+Y_real <- dataset_modelo$p_percent  
+Y_predicho <- as.vector(modelo_PLS$validation$pred[, 1, 9])
+head(data.frame(Y_real, Y_predicho))
+SSE <- sum((Y_real - Y_predicho)^2)
+SST <- sum((Y_real - mean(Y_real))^2)
+R2_CV <- 1 - (SSE / SST)
+R2_CV
+
+#Grafica de y real vs y predicha
+plot(Y_real, Y_predicho, pch = 19, col = "blue", xlab = "Porcentaje real de granos quebrados", ylab = "Porcentaje predciho de granos quebrados", main= "PLS")
+abline(0, 1, col = "red", lwd = 2 )
+
+
+
+# Analizar si hay errores(RMSEP) por temperatura
+resultados_PLS <- data.frame(sample_id = dataset_PLS$sample_id, temperatura = dataset_PLS$temperature_C, Y_real = Y_real, Y_predicho = Y_predicho)   #tabla
+resultados_PLS$error <- resultados_PLS$Y_predicho - resultados_PLS$Y_real #error
+head(resultados_PLS)
+
+#Error x temperatura 
+errorXtemp <- aggregate(error ~ temperatura, data = resultados_PLS, FUN = function(x) sqrt(mean(x^2)))
+errorXtemp
+
+#Sesgo promedio 
+sesgo_prom <- aggregate(error ~ temperatura, data = resultados_PLS, FUN = mean)
+names(sesgo_prom)[2] <- "Sesgo promedio"
+sesgo_prom
+
+#Rango por muestra
+variacion_muestra <- aggregate(Y_predicho ~ sample_id, data = resultados_PLS, FUN = function(x) max(x)-min(x))
+names(variacion_muestra)[2] <- "Rango de predicciones"
+head(variacion_muestra)
+
+#Grafica de prediccion por muestra por temperatura
+resultados_ordenados <- resultados_PLS[order(resultados_PLS$sample_id, resultados_PLS$temperatura),] # Ordenar las mediciones por muestra y temperatura
+
+matriz_pred <- matrix(resultados_ordenados$Y_predicho, ncol = 3, byrow = TRUE) # Organizar las predicciones en una matriz
+
+matplot(c(20, 30, 40), t(matriz_pred), type = "l", lty = 1, xlab = "Temperatura", ylab = "Porcentaje predicho de granos quebrados", main = "Variacion de predicciones por temperatura")
+```
+Observamos que el modelo obtuvo un menor error a los 20°C (RMSEP = 7.216)
+Los sesgos promedios son pequeños en las 3 temperaturas. No hay una sobrestimación o subestimación constante debido a la temperatura.
+En la gráfica de variación de predicciones por temperatura, podemos ver que las predicciones cambian(lineas NO horizontales) entre las mediciones. No todas se comportan igual, algunas tienen más cambio que otras y no todas siguen la misma dirección 
